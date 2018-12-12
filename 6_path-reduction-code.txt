@@ -1,0 +1,111 @@
+#include <stdio.h>
+#include <string.h>
+
+char path[]=  {'S','U','L','L','R','U','L','L','U','L','L','L'};   //dry run data of the maze
+int i, j;
+
+int arrShift(int,int);          //shifts the data in array path to maintain order
+void simplifyPath();         //replaces a sequence of characters by a proper character
+
+void main()
+{
+	printf("Given Path \n");
+	for(j=0;j<strlen(path);j++)     //to print the original dry run data
+	{
+		printf("%c",path[j]);
+	}
+	printf("\n");
+	
+	simplifyPath();
+	
+	printf("Reduced Path \n");
+	for(j=0;j<strlen(path);j++)     //to print the reduced path data
+	{
+		printf("%c",path[j]);
+	}
+
+}
+
+
+
+
+
+
+int arrShift(int i ,int len)
+{
+	for(i=i ; i<len-2 ; i++)
+	{
+		path[i] = path[i+2];
+	}
+	len = len-2;
+	return len;
+}
+
+void simplifyPath()
+{
+	int len = strlen(path);
+	int check = 0;
+	
+	start :                                    
+	for(i=0 ; i<len-2 ; i++)
+	{
+		if(path[i+1] == 'U')    //the logic is based on the presence of ‘U’
+		{
+			switch(path[i])
+			{
+				case 'L':
+					switch(path[i+2])
+					{
+						case 'L':
+							path[i+2] = 'S';
+							check = 1;
+							break;
+					
+						case 'S':
+							path[i+2] = 'R';
+							check = 1;
+							break;
+					
+						case 'R':
+							path[i+2] = 'U';
+							check = 1;
+							break;
+					}
+					break;
+				
+				case 'S':
+					switch(path[i+2])
+					{
+						case 'L':
+							path[i+2] = 'R';
+							check = 1;
+							break;
+					
+						case 'S':
+							path[i+2] = 'U';
+							check = 1;
+							break;
+					}
+					break;
+				
+				case 'R':
+					switch(path[i+2])
+					{
+						case 'L':
+							path[i+2] = 'U';
+							check = 1;
+							break;
+					}
+					break;
+			}
+			
+if(check == 1)
+			{
+				len = arrShift(i,len);
+				check = 0;
+				goto start;
+			}
+		}
+	}
+	
+}

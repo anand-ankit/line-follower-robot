@@ -1,0 +1,212 @@
+//Line following code
+//black line on white surface
+
+#define F_CPU 8000000UL
+#define max	            500
+#define e_max	1000
+
+#include <avr/io.h>
+#include <avr/sfr_defs.h>
+#include <util/delay.h>
+#include <string.h>
+#include <stdbool.h>
+
+int sensor_weight[] = {-6,-4,-2,0,0,2,4,6};     //array for sensor weightings
+int error, des_dev, cur_dev;       //variables for error, set-point and process variable
+int e_sum=0, e_diff=0, e_old=0, pid_out;
+
+int i, j, m, n, k;                      //variables for computing purposes
+
+int s[8], h[8];                        //arrays for storing sensor input
+
+int c=0, x=0, mode=0;
+
+float kp = 15, ki = 0.25, kd = 4;                  //PID constants
+
+int speed = 500;                   //base speed for motor PWM
+
+int readSensor();                         //for taking sensor input
+void pwm_init();                          //setting registers for Fast PWM initialisation
+float err_calc();                         //for calculating error value
+float pid(float);                         //returns PID correction output
+void travelPath();                        //for line following functions
+void motorPIDcontrol(int);                //motor speed control using PID
+void runExtraInch();                      //for running a few steps ahead for alignment
+void goAndTurn(char);                     //for turning of bot
+void motor_stop();                        //stops the motors
+
+
+void main(void)
+{
+	DDRD = 0X00;               //port D is used as input port
+	DDRB |= 0XFF;              //port B is used for output PB5 for left PB6 for right
+	DDRA |= 0XFF;              //port A for motor direction PA1 for left  PA2 for right
+	
+	pwm_init();
+	while(1)
+	{
+		travelPath();
+		_delay_ms(10);
+	}
+}
+
+void pwm_init()
+{
+	TCCR1A |= (1<<COM1A1) | (1<<COM1B1) | (1<<WGM11);
+	TCCR1B |= (1<<WGM12) | (1<<WGM13) | (1<<CS10);
+	ICR1 = 4000;                //TOP value of 4000 for maximum rpm of motors
+}
+
+int readSensor()
+{
+	s[8] = 0;
+	k=0;
+	for(i=0;i<8;i++)
+	{
+		if(bit_is_set(PIND,i))
+		{
+			s[i] = 1;
+		}
+		else
+		{
+			s[i] = 0;
+		}
+	}
+	k = s[0]*(128) + s[1]*(64) + s[2]*(32) + s[3]*(16) + s[4]*(8) + s[5]*(4) + s[6]*(2) + s[7]*(1);        //s[0] is leftmost and s[7] is rightmost
+
+	return(k);
+}
+
+float err_calc()
+{
+	cur_dev=0;
+	des_dev=0;
+	h[8] = 0;
+	m=0;
+	
+	for(i=1;i<7;i++)
+	{
+		if(bit_is_set(PIND,i))
+		{
+			h[i] = 1;
+		}
+		else
+		{
+			h[i] = 0;
+			m++;
+		}
+		cur_dev += h[i] * sensor_weight[i];   //cur_dev stores deviation value
+	}                                               //deviation negative for left and positive for right
+	
+	if(m==0)
+	{m=1;}
+	
+	cur_dev = (cur_dev / m) * 4000;  //deviation value set on the scale of motor rpm value for PID output
+	                                                                
+	error =des_dev - cur_dev;//error negative for right positive for left deviation
+	return error;
+}
+
+
+float pid(float err)
+{
+	e_sum += err;
+	e_diff = err - e_old;
+
+	if (e_sum > e_max)            //condition for keeping the integral of error over a period of time within a limit
+	                                                 
+	{
+		e_sum = e_max;
+	}
+	else if (e_sum < -e_max)
+	{
+		e_sum = -e_max;
+	}
+	
+	pid_out = (kp * err) + (ki * e_sum) + (kd * e_diff);
+	e_old = err;
+	
+	if(pid_out > max)                 //condition for keeping the pid output within the limits of the base value of motor rpm
+	                                                   
+	{
+		pid_out = max;
+	}
+	else if (pid_out < -max)
+	{
+		pid_out = -max;
+	}
+	return pid_out;
+}
+
+void motorPIDcontrol(int base)                   //function for giving PID output to the motors
+{
+	OCR1A = base + (pid(err_calc()));
+	OCR1B = base - (pid(err_calc()));
+	PORTA |= ((1<<PINA1) | (1<<PINA2));  //both direction pins PA1 and PA2 are kept high for forward motion
+	                                                                           
+}
+
+void runExtraInch()
+{
+	OCR1A = 500;
+	OCR1B = 500;
+	_delay_ms(300);
+	motor_stop();
+}
+
+
+void motor_stop()
+{
+	OCR1A = 0;
+	OCR1B = 0;
+	_delay_ms(500);
+}
+
+void travelPath()
+{
+	mode = readSensor();
+	PORTA |= ((1<<PINA1) | (1<<PINA2));
+	switch(mode)
+	{
+		case 255:			//11111111  all white- end of line so U-turn
+			_delay_ms(300);
+			motor_stop();
+			PORTA &= ~(1<<PINA2);  //right motor set for reverse rotation for U-turning                                                             
+			OCR1A = 800;
+			OCR1B = 800;
+			_delay_ms(1800);
+			break;
+		
+		case 248:                       //11111000 cases for 90 degree right turn
+		case 240:                       //11110000
+		case 224:                       //11100000
+			motor_stop();
+			runExtraInch();
+			OCR1A = 800;
+			OCR1B = 0;
+			_delay_ms(1100);
+			break;
+		
+		case 31:                        //00011111 cases for 90 degree left turn
+		case 15:                        //00001111
+		case 7 :                          //00000111
+			motor_stop();
+			runExtraInch();
+			OCR1A = 0;
+			OCR1B = 800;
+			_delay_ms(1100);
+			break;
+		
+		case 243:        //11110011 cases for straight and curved path following
+		case 231:        //11100111 
+		case 227:        //11100011
+		case 207:        //11001111
+		case 199:        //11000111
+		
+			motorPIDcontrol(speed);
+			break;
+		
+		default:           //for any other case straight and curved path following
+			motorPIDcontrol(speed);
+	}
+}
